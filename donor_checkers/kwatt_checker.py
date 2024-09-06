@@ -15,47 +15,49 @@ from transliterate import translit
 from donor_checkers.utils.image_tools import format_image, get_ascii_url, perturb_image
 from donor_checkers.utils.yandex_api import get_new_link, create_folder, upload_file
 
-def kwatt_check(df, donor_link, discount, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
+def kwatt_check(df, donor_link, discount, lower_price_limit, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
     
     # выявление последней страницы
-    max_page_number = re.search(r'page-(\d+)', donor_link).group(1)
-    donor_link = donor_link.split(max_page_number)[0]
+    page_number = re.search(r'page-(\d+)', donor_link).group(1)
+    donor_link = donor_link.split(page_number)[0]
 
     new_count = 0
+    for p in trange(int(page_number)):
+        html = BS(requests.get(f'{donor_link}{p+1}/').content, 'html.parser')
+        for product in html.find_all("div", {"class": "ty-column4"}):
+       
+            # выявление артикула и цены не переходя на страницу продукта
+            try:
+                vendorCode = "KWT-" + re.search(r'([\d\w -/]+) \(', product.find("span", {"class": "ty-control-group__item"}).text)[1]
+            except:
+                print('vendorcode not found')
+                continue
+            try:
+                price = int(int(''.join(re.findall(r'\d+', product.find("span", {"class": "ty-price-num"}).text)))*((100 - 3)/100))
+            except:
+                price = float('nan')
+                
+            # фильтр по цене
+            if pd.isna(price) or price < lower_price_limit:
+                continue
 
-    # добавление новых позиций
-    if check_new:
-        print(f'Проверка наличия новых позиций и их добавление:')
-        for p in trange(int(max_page_number)):
-            # if p < 33:
-            #     continue
-            page = requests.get(f'{donor_link}{p+1}/')
-            html = BS(page.content, 'html.parser')
+            # обновление цены в excel-файле, если такой артикул есть
+            if vendorCode in df["Id"].values:
+                index = df[df['Id'] == vendorCode].index[0]
+                df.loc[index, 'Price'] = price
+                df.loc[index, 'Availability'] = "В наличии"
             
-            for product in html.find_all("div", {"class": "ty-column4"}):
-                new_index = len(df.index)
-                try:
-                    product_url = product.find("div", {"class": "ut2-gl__image"}).a['href']
-                except:
-                    continue
-                product_page = requests.get(product_url)
-                product_html = BS(product_page.content, 'html.parser')
-                    
-                # артикул
-                try:
-                    vendorCode = "KWT-" + re.search(r':\n([\d\w -/]+) \(', product_html.find("div", {"class": "ut2-pb__sku"}).text)[1]
-                except:
-                    vendorCode = "no data"
+            # добавление новых позиций
+            else:
+                if check_new and (vendorCode not in df["Id"].values):
+                    new_index = len(df.index)
+                    try:
+                        product_url = product.find("div", {"class": "ut2-gl__image"}).a['href']
+                    except:
+                        print('product url is shit')
+                        continue
+                    product_html = BS(requests.get(product_url).content, 'html.parser')
 
-                # цена
-                try:
-                    price = int(''.join(re.findall(r'\d+', product_html.find("span", {"class": "ty-price-num"}).text)))
-                except:
-                    price = float('nan')
-                # if price < 15000:
-                #     continue
-
-                if vendorCode not in df["Id"].values:
                     # title
                     try:
                         title = product_html.find("div", {"class": "ut2-pb__title"}).h1.text.strip()
@@ -68,13 +70,9 @@ def kwatt_check(df, donor_link, discount, headers, yandex_image_folder_path, ann
                     for cat in breadcrumb.find_all("a"):
                         category.append(cat.string)
                     category = category[2:4]
-                    # while len(category) < 2:
-                        # category.append('')
-                    # category = ' | '.join(category)
 
                     # описание
                     description = []
-                    
                     page_description = product_html.find("div", {"id": "content_description"}).div
                     if page_description is not None:
                         for child in page_description.children:
@@ -129,9 +127,7 @@ def kwatt_check(df, donor_link, discount, headers, yandex_image_folder_path, ann
                             if feature.contents[0].text == "БРЕНД":
                                 brand = feature.contents[1].text
                     except: pass
-
-                    # description = f"{title}\n{annex[0]}\n{description}\n{annex[1]}" # чтобы потом изменить
-
+                    
                     # картинки
                     try:
                         imageUrls = []
@@ -141,6 +137,7 @@ def kwatt_check(df, donor_link, discount, headers, yandex_image_folder_path, ann
                                 if '/images/' in a["href"]:
                                     imageUrls.append(a["href"])
                             except: pass
+                        imageUrls = imageUrls[0:10] # ограничение в 10 изображений
                         for i in range(len(imageUrls)):
                             url = get_ascii_url(imageUrls[i])
                             filename = f'{translit(vendorCode, language_code='ru', reversed=True)}_{i}.jpg'
@@ -157,75 +154,23 @@ def kwatt_check(df, donor_link, discount, headers, yandex_image_folder_path, ann
                         imageUrls = " | ".join(imageUrls)
                     except Exception as e:
                         imageUrls = "no data"
-                        # print("image error", e)
 
-                    # запись
-                    new_count += 1
+                    # writing
                     df.loc[new_index, 'Id'] = vendorCode
-                    df.loc[new_index, 'Brand'] = brand
-                    df.loc[new_index, 'Title'] = title
                     df.loc[new_index, 'Price'] = price
+                    df.loc[new_index, 'Title'] = title
                     df.loc[new_index, 'Category'] = category[0]
                     df.loc[new_index, 'GoodsType'] = category[1]
+                    df.loc[new_index, 'Brand'] = brand
                     df.loc[new_index, 'Description'] = description
                     df.loc[new_index, 'ImageUrls'] = imageUrls
+                    df.loc[new_index, 'Availability'] = "В наличии"
+                    new_count += 1
 
-                    # периодический сейв
-                    if (new_count%50 == 0):
-                        # df = df.drop_duplicates(subset=["Id"], keep='last')
-                        df.to_excel(f'{excel_file_name}.xlsx', sheet_name='Объявления', index=False)
-                        sleep(1)
-                        
-
-    old_count = 0
-    # Обновление существующих позиций в выгрузке
-    print("Обновление существующих позиций:")
-    for p in trange(int(max_page_number)):
-        page = requests.get(f'{donor_link}{p+1}/')
-        html = BS(page.content, 'html.parser')
-        for product in html.find_all("div", {"class": "ty-column4"}):
-            try:
-                product_info = product.find("div", {"class": "ut2-gl__content content-on-hover"})
-                pageVendorCode = "KWT-" + re.search(r'([\d\w -/]+) \(', product_info.find("span", {"class": "ty-control-group__item"}).text)[1]
-            except:
-                continue
-
-            try:
-                index = df[df['Id'] == pageVendorCode].index[0]
-            except:
-                continue
-
-            # обновление цены
-            try:
-                pagePrice = float(''.join(re.findall(r'\d+', product_info.find("span", {"class": "ty-price"}).text)))
-                price = round(pagePrice * ((100 - discount)/100), 0)
-            except:
-                # print(f'page {p+1} | {pageVendorCode} | no price')
-                price = 'no data'
-            
-            # изменение описания
-            # description = f"{df.loc[index, 'Title']}\n\n{df.loc[index, 'Description']}\n{annex}"
-
-            # Наличие
-            try:
-                donorAvailability = product_info.find("div", {"class": "ut2-gl__amount"}).text.replace(' ', ' ')
-                if price > 20000:
-                    availability = "В наличии"
-                else:
-                    availability = "Нет в наличии"
-            except:
-                availability = "Нет в наличии"
-
-            # запись
-            old_count += 1
-            df.loc[index, 'Availability'] = availability
-            df.loc[index, 'DonorAvailability'] = donorAvailability
-            df.loc[index, 'Price'] = price
-            old_count += 1
-            # df.loc[index, 'Description'] = description
+                # периодический сейв
+                if (new_count%25 == 0):
+                    df.to_excel(f'{excel_file_name}.xlsx', sheet_name='Объявления', index=False)
+                    sleep(1)
         
-    # обработка перед финальным сохранением и сохранение
-    df = df.drop_duplicates(subset=["Id"], keep='first')
-    
     return df
     

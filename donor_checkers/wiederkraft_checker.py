@@ -16,7 +16,7 @@ from urllib.request import urlopen
 from donor_checkers.utils.image_tools import format_image
 from donor_checkers.utils.yandex_api import get_new_link, create_folder, upload_file
 
-def wiederkraft_check(df, donor_link, discount, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
+def wiederkraft_check(df, donor_link, discount, lower_price_limit, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
     
     # парсинг прайса wdk/opt
     price_df = pd.read_excel(f"sources/Wiederkraft price.xlsx", sheet_name='WDK price')
@@ -48,9 +48,10 @@ def wiederkraft_check(df, donor_link, discount, headers, yandex_image_folder_pat
                         
                         # цена
                         price = float(''.join(re.findall(r'\d+', product_html.find("bdi").text)))
-                        # if price < 8000:
-                        #     price_lower_count += 1
-                        #     break
+                       
+                        # фильтр по цене
+                        if pd.isna(price) or price < lower_price_limit:
+                            continue
 
                         # артикул
                         try:
@@ -118,10 +119,8 @@ def wiederkraft_check(df, donor_link, discount, headers, yandex_image_folder_pat
 
                             # периодический сейв
                             if (new_count%50 == 0):
-                                # df = df.drop_duplicates(subset=["Id"], keep='last')
                                 df.to_excel(f'{excel_file_name}.xlsx', sheet_name='Объявления', index=False)
                                 sleep(1)
-
                             
             except Exception as e:
                 print(e)
@@ -162,9 +161,7 @@ def wiederkraft_check(df, donor_link, discount, headers, yandex_image_folder_pat
                 
                 break
 
-        
     # обработка перед финальным сохранением и сохранение
-    df = df.drop_duplicates(subset=["Id"], keep='first')
     price_df.to_excel(f'sources/Wiederkraft price.xlsx', sheet_name='WDK price', index=False)
 
     return df

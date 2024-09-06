@@ -16,7 +16,7 @@ from urllib.request import urlopen
 from donor_checkers.utils.image_tools import format_image
 from donor_checkers.utils.yandex_api import get_new_link, create_folder, upload_file
 
-def mkslift_check(df, donor_link, discount, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
+def mkslift_check(df, donor_link, discount, lower_price_limit, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
 
     # парсим xml донора
     xml_response = requests.get(donor_link)
@@ -47,11 +47,13 @@ def mkslift_check(df, donor_link, discount, headers, yandex_image_folder_path, a
                     else:
                         course = 1
                     price = round(float(offer.find('price').text)*((100 - discount)/100) * float(course), 0) 
-                    if float(price) < 3000:
-                        continue
                 except:
-                    price = -1
-                
+                    price = float('nan')
+
+                # фильтр по цене
+                if pd.isna(price) or price < lower_price_limit:
+                    continue
+
                 # title
                 vendor = offer.find('vendor').text  
                 title = f"{offer.find('name').text.split(vendor)[-1].split(vendorCode)[-1].strip()} {vendorCode} {vendor}"
@@ -140,42 +142,31 @@ def mkslift_check(df, donor_link, discount, headers, yandex_image_folder_path, a
                 new_count += 1
                 # периодический сейв
                 if (new_count%50 == 0 or new_count == len(offer_list)):
-                    # df['DateEnd'] = pd.to_datetime(df['DateEnd']).dt.date
-                    df = df.drop_duplicates(subset=["Id"], keep='last')
                     df.to_excel(f'{excel_file_name}.xlsx', sheet_name='Объявления', index=False)
 
-    # обновление существующих позиций
-    old_count = 0
     print("Обновление существующих позиций:")
     for i in trange(len(df)):
         vendorCode = df.loc[i, 'Id']
-        # dateend = change_dateend(str(df.loc[i, 'Availability']), str(df.loc[i, 'AvitoStatus']), yesterday)
         for offer in offer_list[:]:
             if vendorCode == offer.find('vendorCode').text: 
-                # index = df[df['Id'] == offerVendorCode].index[0]
-                # vendorCode = df.loc[index, 'Id']
                 # цена
                 try:
                     price = round(float(offer.find('price').text)*((100 - discount)/100), 0)
                 except:
-                    continue
+                    price = float('nan')
 
-                if float(price) > 8000: 
+                if float(price) > lower_price_limit: 
                     # наличие
                     if offer.attrib['available'] == "true":
                         availability = "В наличии"
                     if offer.attrib['available'] == "false":
                         availability = "Нет в наличии"
-                else: # делаем позиции неактивными с ценой меньше 3к
+                else: 
                     availability = "Нет в наличии"
 
                 # запись
                 df.loc[i, 'Price'] = price
                 df.loc[i, 'Availability'] = availability
-                old_count += 1
                 break
 
-    # обработка перед финальным сохранением и сохранение
-    df = df.drop_duplicates(subset=["Id"], keep='first')
-    
     return df

@@ -17,42 +17,12 @@ from transliterate import translit
 from donor_checkers.utils.image_tools import format_image, get_ascii_url, perturb_image
 from donor_checkers.utils.yandex_api import get_new_link, create_folder, upload_file
 
-link = "https://100kwatt.ru/stanok-shos-120p/"
+donor_link = "https://100kwatt.ru/gidravlicheskoe-oborudovanie-i-instrument/page-1/"
+html = BS(requests.get(donor_link).content, 'html.parser')
+for product in html.find_all("div", {"class": "ty-column4"}):
+    # выявление артикула и цены не переходя на страницу продукта
+    vendorCode = "KWT-" + re.search(r'([\d\w -/]+) \(', product.find("span", {"class": "ty-control-group__item"}).text)[1]
+    price = int(int(''.join(re.findall(r'\d+', product.find("span", {"class": "ty-price-num"}).text)))*((100 - 3)/100))
+    # price = round(int(''.join(re.findall(r'\d+', product.find("span", {"class": "ty-price-num"})*((100 - 3)/100).text))), 0)
 
-page = requests.get(link)
-product_html = BS(page.content, 'html.parser')
-
-# yandex_token = "y0_AgAAAAB2eAMkAAvtEgAAAAEHDYscAAAO0qWJlTtHEYrzMF1eVgrRvisOSQ"
-# yandex_image_folder_path = "100kwatt Comp Main pictures"
-
-excel_name = "Dva Domkrata"
-yandex_image_folder_path = "100kwatt Hydr Main pictures"
-yandex_token = "y0_AgAAAAB3PjE7AAwShgAAAAEJ30hAAABEzz9MQBNKkLSRUWhuWW3Ezc9xxQ"
-donor_link = "https://100kwatt.ru/gidravlicheskoe-oborudovanie-i-instrument/page-"
-
-headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': f'OAuth {yandex_token}'}
-
-vendorCode = "РОСТ 6112017"
-
-imageUrls = []
-images = product_html.find("div", {"class": "ut2-pb__img-wrapper"}).find_all("a")
-for a in images:
-    try:
-        if '/images/' in a["href"]:
-            imageUrls.append(a["href"])
-    except: pass
-for i in range(len(imageUrls)):
-    url = get_ascii_url(imageUrls[i])
-    filename = f'{translit(vendorCode, language_code='ru', reversed=True)}_{i}.jpg'
-    filename = re.sub(r'/', '-', filename, flags=re.IGNORECASE)
-    filename = re.sub(r'%', '', filename, flags=re.IGNORECASE)
-    resized_img = format_image(url)
-    cv2.imwrite(filename, resized_img)
-    perturbed_img = perturb_image(filename)
-    cv2.imwrite(filename, perturbed_img)
-    upload_file(filename, f'{yandex_image_folder_path}/{filename}', headers, True)
-    sleep(1)
-    os.remove(filename) 
-    imageUrls[i] = get_new_link(filename, yandex_image_folder_path)
-imageUrls = " | ".join(imageUrls)
-print(imageUrls)
+    print(vendorCode, price)

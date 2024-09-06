@@ -28,15 +28,12 @@ report = {}
 donors = {
     # 'mkslift': mkslift_check,
     # 'ironmac': ironmac_check,
-    # 'garopt1': garopt_check,
-    # 'garopt2': garopt_check,
-    # 'garopt3': garopt_check,
+    'garopt': garopt_check,
     # 'wiederkraft': wiederkraft_check,
     # 'optimus': optimus_check,
-    # '100kwatt_comp': kwatt_check,
-    # '100kwatt_hydr': kwatt_check,
-    'corsel_promtorg': corsel_check,
-    'corsel_dvadomkrata': corsel_check,
+    '100kwatt_hydr': kwatt_check,
+    # 'corsel_promtorg': corsel_check,
+    # 'corsel_dvadomkrata': corsel_check,
 }
 
 try:
@@ -66,37 +63,40 @@ try:
         headers = {'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': f'OAuth {yandex_token}'}
 
         # temporary settings
-        if excel_file_name == "Promtorg":
-            excel_file_name = "corsel_promtorg"
-        if excel_file_name == "Dva Domkrata":
-            excel_file_name = "corsel_dvadomkrata"
+        # if excel_file_name == "Promtorg":
+        #     excel_file_name = "corsel_promtorg"
+        # if excel_file_name == "Dva Domkrata":
+        #     excel_file_name = "kwt"
 
+        try:
+            # открываем xlsx файл выгрузки
+            df = pd.read_excel(f"{excel_file_name}.xlsx", sheet_name='Объявления')
+            print(f"\n      Avito аккаунт — {account['name']}")
 
-        # открываем xlsx файл выгрузки
-        df = pd.read_excel(f"{excel_file_name}.xlsx", sheet_name='Объявления')
-        print(f"\n      Avito аккаунт — {account['name']}")
+            # Загрузка последних версий обратных выгрузок на яндекс диск с почты
+            # imap_download(contact_number, excel_file_name, settings['imap_pass'], headers)
 
-        # Загрузка последних версий обратных выгрузок на яндекс диск с почты
-        # imap_download(contact_number, excel_file_name, settings['imap_pass'], headers)
+            # перебор доноров и их проверка    
+            for donor in data['donors']:
 
-        # перебор доноров и их проверка    
-        for donor in data['donors']:
-
-            check_new = True if donor["check_new"].lower() == "true" else False
-            update = True if donor["update"].lower() == "true" else False
-            yandex_img_path = donor['yandex_image_folder_path']
-            create_folder(donor['yandex_image_folder_path'], headers) # создание папки для изображений, если ее нет
-
-            args = [update, df, donor['link'], donor['discount'], headers, yandex_img_path, donor["annex"], check_new, excel_file_name, currencies]
+                check_new = True if donor["check_new"].lower() == "true" else False
+                update = True if donor["update"].lower() == "true" else False
+                yandex_img_path = donor['yandex_image_folder_path']
+                create_folder(donor['yandex_image_folder_path'], headers) # создание папки для изображений, если ее нет
+                args = [update, df, donor['link'], donor['discount'], donor['lower_price_limit'], headers, yandex_img_path, donor["annex"], check_new, excel_file_name, currencies]
+                
+                # запуск проверки конкретного донора, магия тут
+                if donor['name'] in donors.keys():
+                    print(f"    Донор — {donor['name']}, Скидка — {donor['discount']}% ===-")
+                    report[donor['name']], df = launch(donors[donor['name']], args)
             
-            # запуск проверки конкретного донора, магия тут
-            if donor['name'] in donors.keys():
-                print(f"    Донор — {donor['name']}, Скидка — {donor['discount']}% ===-")
-                report[donor['name']] = launch(donors[donor['name']], args)[0]
-        
-        print(f'Запись в файл — {excel_file_name}.xlsx. Обновление поля DateEnd...')
-        # df = change_dateend(df, yesterday)
-        # df.to_excel(f'{excel_file_name}.xlsx', sheet_name='Объявления', index=False)
+            print(f'Запись в файл — {excel_file_name}.xlsx. Обновление поля DateEnd...')
+            df = change_dateend(df, yesterday)
+            df = df.drop_duplicates(subset=["Id"], keep='first')
+            df.to_excel(f'{excel_file_name}.xlsx', sheet_name='Объявления', index=False)
+            print(f'Файл {excel_file_name}.xlsx успешно сохранен!')
+        except Exception as e:
+            print(f'Ошибка: при работе с файлами, {e}')
 
     # Создание отчета
     message = ['Обновление завершено. Отчет о проверке:\n']

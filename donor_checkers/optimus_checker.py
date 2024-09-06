@@ -16,7 +16,7 @@ from urllib.request import urlopen
 from donor_checkers.utils.image_tools import format_image
 from donor_checkers.utils.yandex_api import get_new_link, create_folder, upload_file
 
-def optimus_check(df, donor_link, discount, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
+def optimus_check(df, donor_link, discount, lower_price_limit, headers, yandex_image_folder_path, annex, check_new, excel_file_name, currencies):
 
     # парсинг прайса wdk/opt
     price_df = pd.read_excel(f"sources/Optimus price.xlsx", sheet_name='OPT price')
@@ -46,7 +46,11 @@ def optimus_check(df, donor_link, discount, headers, yandex_image_folder_path, a
                             product_html = BS(product_page.content, 'html.parser')
 
                             # цена
-                            # price = float(''.join(re.findall(r'\d+', product_html.find("bdi").text)))
+                            price = float(''.join(re.findall(r'\d+', product_html.find("bdi").text)))
+                            
+                            # фильтр по цене
+                            if pd.isna(price) or price < lower_price_limit:
+                                continue
 
                             # артикул
                             try:
@@ -109,7 +113,6 @@ def optimus_check(df, donor_link, discount, headers, yandex_image_folder_path, a
                                 new_count += 1
                                 df.loc[new_index, 'Id'] = vendorCode
                                 df.loc[new_index, 'Title'] = title
-                                # df.loc[new_index, 'Price'] = price
                                 df.loc[new_index, 'Category'] = category[0]
                                 df.loc[new_index, 'GoodsType'] = category[1]
                                 df.loc[new_index, 'ProductType'] = category[2]
@@ -138,7 +141,7 @@ def optimus_check(df, donor_link, discount, headers, yandex_image_folder_path, a
                 price = round(price * ((100 - discount)/100) * float(course), 0)
 
                 # Наличие
-                if float(df.loc[i, 'Price']) > 8000:
+                if price > lower_price_limit:
                     availability = "В наличии"
                 else:
                     availability = "Нет в наличии"
@@ -157,9 +160,7 @@ def optimus_check(df, donor_link, discount, headers, yandex_image_folder_path, a
                 price_df.loc[j, 'Status'] = "OK"
                 break
 
-        
     # обработка перед финальным сохранением и сохранение
-    df = df.drop_duplicates(subset=["Id"], keep='first')
     price_df.to_excel(f'sources/Optimus price.xlsx', sheet_name='OPT price', index=False)
 
     return df

@@ -102,7 +102,6 @@ for p in trange(p_num):
 
                     # периодический сейв
                     if (count%50 == 0):
-                        # df = df.drop_duplicates(subset=["Id"], keep='last')
                         df.to_excel(f'{excel_name}.xlsx', sheet_name='Объявления', index=False)
                         sleep(1)
 

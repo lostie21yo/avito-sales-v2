@@ -2,9 +2,10 @@ import pandas as pd
 from tqdm import trange
 
 # active_phrases = ("В наличии", "Под заказ", "Активно")
-inactive_phrases = ("Нет в наличии", "Снято с публикации", "Истёк срок публикации", "В архиве", "Отклонено", "Заблокировано")
+inactive_phrases = ("Нет в наличии", "Снято с публикации", "Истёк срок публикации", "В архиве", "Заблокировано")
 
 def change_dateend(df, date):
+    df['DateEnd'] = ""
     df['DateEnd'] = pd.to_datetime(df.DateEnd).dt.strftime('%Y-%m-%d')
     for i in trange(len(df)):
         dateend = ""
